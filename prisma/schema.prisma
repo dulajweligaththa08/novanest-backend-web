@@ -1,0 +1,464 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// NovaNest — Prisma Schema
+// Database: NeonDB (PostgreSQL)
+// ─────────────────────────────────────────────────────────────────────────────
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DATABASE_URL")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ENUMS
+// ─────────────────────────────────────────────────────────────────────────────
+
+enum Role {
+  ADMIN
+  CUSTOMER
+}
+
+enum ApartmentStatus {
+  AVAILABLE
+  RESERVED
+  SOLD
+  UNAVAILABLE
+}
+
+enum ProjectStatus {
+  UPCOMING
+  ONGOING
+  COMPLETED
+}
+
+enum InquiryStatus {
+  NEW
+  CONTACTED
+  RESOLVED
+  CLOSED
+}
+
+enum UpdateType {
+  BOOKING_CONFIRMATION
+  PAYMENT_UPDATE
+  CONSTRUCTION_PROGRESS
+  APARTMENT_COMPLETION
+  HANDOVER_INFORMATION
+  IMPORTANT_ANNOUNCEMENT
+  INSPECTION_UPDATE
+  DOCUMENT_UPDATE
+  GENERAL
+}
+
+enum DocumentType {
+  BOOKING_AGREEMENT
+  PAYMENT_SCHEDULE
+  LEGAL_DOCUMENT
+  APARTMENT_DOCUMENT
+  OTHER
+}
+
+enum ArticleStatus {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
+}
+
+enum JobStatus {
+  OPEN
+  CLOSED
+}
+
+enum ApplicationStatus {
+  NEW
+  REVIEWING
+  SHORTLISTED
+  REJECTED
+  HIRED
+}
+
+enum GalleryCategory {
+  EXTERIOR
+  INTERIOR
+  COMMON_AREAS
+  AMENITIES
+  SURROUNDINGS
+  OTHER
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// USERS
+// ─────────────────────────────────────────────────────────────────────────────
+
+model User {
+  id            String    @id @default(cuid())
+  email         String    @unique
+  passwordHash  String
+  role          Role      @default(CUSTOMER)
+  isActive      Boolean   @default(true)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  // Relations
+  customer      Customer?
+  adminProfile  AdminProfile?
+
+  @@map("users")
+}
+
+model AdminProfile {
+  id          String   @id @default(cuid())
+  userId      String   @unique
+  fullName    String
+  phone       String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("admin_profiles")
+}
+
+model Customer {
+  id            String    @id @default(cuid())
+  userId        String    @unique
+  fullName      String
+  phone         String?
+  address       String?
+  nationalId    String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  user                User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  customerApartments  CustomerApartment[]
+  notifications       Notification[]
+
+  @@map("customers")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PROJECTS & BUILDINGS
+// ─────────────────────────────────────────────────────────────────────────────
+
+model Project {
+  id             String        @id @default(cuid())
+  name           String
+  slug           String        @unique
+  location       String
+  city           String?
+  description    String?
+  highlights     String?
+  status         ProjectStatus @default(ONGOING)
+  startingPrice  Decimal?      @db.Decimal(15, 2)
+  mainImage      String?
+  brochureUrl    String?
+  mapUrl         String?
+  isPublished    Boolean       @default(false)
+  completionDate DateTime?
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  buildings          Building[]
+  gallery            Gallery[]
+  projectFacilities  ProjectFacility[]
+  inquiries          Inquiry[]
+
+  @@map("projects")
+}
+
+model Building {
+  id          String   @id @default(cuid())
+  projectId   String
+  name        String
+  description String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  project  Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  floors   Floor[]
+
+  @@map("buildings")
+}
+
+model Floor {
+  id          String   @id @default(cuid())
+  buildingId  String
+  floorNumber Int
+  description String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  building   Building    @relation(fields: [buildingId], references: [id], onDelete: Cascade)
+  apartments Apartment[]
+
+  @@unique([buildingId, floorNumber])
+  @@map("floors")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// APARTMENTS
+// ─────────────────────────────────────────────────────────────────────────────
+
+model ApartmentType {
+  id           String   @id @default(cuid())
+  name         String   @unique  // Studio, 1BR, 2BR, 3BR, Penthouse, etc.
+  bedrooms     Int?
+  bathrooms    Int?
+  minAreaSqft  Decimal? @db.Decimal(10, 2)
+  maxAreaSqft  Decimal? @db.Decimal(10, 2)
+  description  String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  apartments Apartment[]
+
+  @@map("apartment_types")
+}
+
+model Apartment {
+  id              String          @id @default(cuid())
+  floorId         String
+  apartmentTypeId String?
+  unitNumber      String
+  bedrooms        Int
+  bathrooms       Int
+  areaSqft        Decimal?        @db.Decimal(10, 2)
+  price           Decimal?        @db.Decimal(15, 2)
+  status          ApartmentStatus @default(AVAILABLE)
+  description     String?
+  isPublished     Boolean         @default(false)
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  floor               Floor               @relation(fields: [floorId], references: [id], onDelete: Cascade)
+  apartmentType       ApartmentType?      @relation(fields: [apartmentTypeId], references: [id])
+  gallery             Gallery[]
+  floorPlans          FloorPlan[]
+  customerApartments  CustomerApartment[]
+  inquiries           Inquiry[]
+
+  @@unique([floorId, unitNumber])
+  @@map("apartments")
+}
+
+model FloorPlan {
+  id          String   @id @default(cuid())
+  apartmentId String
+  imageUrl    String
+  caption     String?
+  sortOrder   Int      @default(0)
+  createdAt   DateTime @default(now())
+
+  apartment Apartment @relation(fields: [apartmentId], references: [id], onDelete: Cascade)
+
+  @@map("floor_plans")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// FACILITIES & GALLERY
+// ─────────────────────────────────────────────────────────────────────────────
+
+model Facility {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  icon        String?  // icon name or URL
+  description String?
+  createdAt   DateTime @default(now())
+
+  projectFacilities ProjectFacility[]
+
+  @@map("facilities")
+}
+
+model ProjectFacility {
+  id         String @id @default(cuid())
+  projectId  String
+  facilityId String
+
+  project  Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  facility Facility @relation(fields: [facilityId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, facilityId])
+  @@map("project_facilities")
+}
+
+model Gallery {
+  id          String          @id @default(cuid())
+  projectId   String?
+  apartmentId String?
+  imageUrl    String
+  caption     String?
+  category    GalleryCategory @default(OTHER)
+  sortOrder   Int             @default(0)
+  createdAt   DateTime        @default(now())
+
+  project   Project?   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  apartment Apartment? @relation(fields: [apartmentId], references: [id], onDelete: Cascade)
+
+  @@map("gallery")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// CUSTOMER APARTMENT ASSIGNMENT
+// ─────────────────────────────────────────────────────────────────────────────
+
+model CustomerApartment {
+  id              String   @id @default(cuid())
+  customerId      String
+  apartmentId     String
+  assignedAt      DateTime @default(now())
+  bookingDate     DateTime?
+  agreedPrice     Decimal? @db.Decimal(15, 2)
+  notes           String?
+  isPrimary       Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  customer    Customer          @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  apartment   Apartment         @relation(fields: [apartmentId], references: [id])
+  updates     ApartmentUpdate[]
+  documents   Document[]
+
+  @@map("customer_apartments")
+}
+
+model ApartmentUpdate {
+  id                  String    @id @default(cuid())
+  customerApartmentId String
+  title               String
+  description         String
+  updateType          UpdateType @default(GENERAL)
+  isRead              Boolean   @default(false)
+  publishedAt         DateTime  @default(now())
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  customerApartment CustomerApartment @relation(fields: [customerApartmentId], references: [id], onDelete: Cascade)
+  notifications     Notification[]
+
+  @@map("apartment_updates")
+}
+
+model Document {
+  id                  String       @id @default(cuid())
+  customerApartmentId String
+  title               String
+  fileUrl             String
+  documentType        DocumentType @default(OTHER)
+  description         String?
+  isRead              Boolean      @default(false)
+  uploadedAt          DateTime     @default(now())
+  createdAt           DateTime     @default(now())
+
+  customerApartment CustomerApartment @relation(fields: [customerApartmentId], references: [id], onDelete: Cascade)
+  notifications     Notification[]
+
+  @@map("documents")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// NOTIFICATIONS
+// ─────────────────────────────────────────────────────────────────────────────
+
+model Notification {
+  id               String   @id @default(cuid())
+  customerId       String
+  title            String
+  message          String
+  isRead           Boolean  @default(false)
+  updateId         String?
+  documentId       String?
+  createdAt        DateTime @default(now())
+
+  customer  Customer         @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  update    ApartmentUpdate? @relation(fields: [updateId], references: [id], onDelete: SetNull)
+  document  Document?        @relation(fields: [documentId], references: [id], onDelete: SetNull)
+
+  @@map("notifications")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// INQUIRIES
+// ─────────────────────────────────────────────────────────────────────────────
+
+model Inquiry {
+  id             String        @id @default(cuid())
+  customerName   String
+  email          String
+  phone          String?
+  projectId      String?
+  apartmentId    String?
+  message        String
+  status         InquiryStatus @default(NEW)
+  adminNotes     String?
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  project   Project?   @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  apartment Apartment? @relation(fields: [apartmentId], references: [id], onDelete: SetNull)
+
+  @@map("inquiries")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// NEWS & INSIGHTS
+// ─────────────────────────────────────────────────────────────────────────────
+
+model Article {
+  id           String        @id @default(cuid())
+  title        String
+  slug         String        @unique
+  category     String        // Real Estate, Investment, Architecture, Lifestyle, etc.
+  author       String?
+  thumbnail    String?
+  excerpt      String?
+  body         String
+  status       ArticleStatus @default(DRAFT)
+  publishedAt  DateTime?
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+
+  @@map("articles")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// CAREERS
+// ─────────────────────────────────────────────────────────────────────────────
+
+model Job {
+  id           String    @id @default(cuid())
+  title        String
+  department   String
+  location     String
+  type         String    // Full-time, Part-time, Contract
+  description  String
+  requirements String?
+  status       JobStatus @default(OPEN)
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  applications JobApplication[]
+
+  @@map("jobs")
+}
+
+model JobApplication {
+  id          String            @id @default(cuid())
+  jobId       String
+  fullName    String
+  email       String
+  phone       String?
+  coverLetter String?
+  cvUrl       String?
+  status      ApplicationStatus @default(NEW)
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+
+  job Job @relation(fields: [jobId], references: [id], onDelete: Cascade)
+
+  @@map("job_applications")
+}
