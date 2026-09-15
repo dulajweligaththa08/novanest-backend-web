@@ -25,16 +25,23 @@ app.use('/api', limiter);
 // ─── CORS ─────────────────────────────────────────────────────────────────────
 const allowedOrigins = [
   process.env.WEBSITE_URL || 'http://localhost:3000',
-  process.env.ADMIN_URL   || 'http://localhost:3001',
+  process.env.ADMIN_URL   || 'http://localhost:3002',
 ];
 
 app.use(cors({
   origin: (origin, callback) => {
-    if (!origin || allowedOrigins.includes(origin)) {
-      callback(null, true);
-    } else {
-      callback(new Error('Not allowed by CORS'));
+    // Allow requests with no origin (Postman, curl, mobile apps)
+    if (!origin) return callback(null, true);
+
+    // In development, allow any localhost port automatically
+    if (process.env.NODE_ENV !== 'production' && /^http:\/\/localhost(:\d+)?$/.test(origin)) {
+      return callback(null, true);
     }
+
+    // In production, only allow explicitly listed origins
+    if (allowedOrigins.includes(origin)) return callback(null, true);
+
+    callback(new Error(`CORS: origin ${origin} not allowed`));
   },
   credentials: true,
 }));
